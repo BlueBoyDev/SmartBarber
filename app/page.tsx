@@ -1,66 +1,75 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { useState } from 'react';
+import { ServiceCard } from '@/components/ServiceCard';
+import { BookingModal } from '@/components/BookingModal';
 
 export default function Home() {
+  const [selectedService, setSelectedService] = useState<string | null>(null);
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      minHeight: '100vh',
+      padding: '4rem 2rem'
+    }}>
+      <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+        <h1 style={{ 
+          color: 'var(--color-primary)', 
+          fontSize: '3.5rem', 
+          marginBottom: '1rem',
+          letterSpacing: '-1px'
+        }}>
+          SmartBarber
+        </h1>
+        <p style={{ 
+          color: 'var(--color-text-muted)', 
+          fontSize: '1.2rem', 
+          maxWidth: '600px',
+        }}>
+          Selecciona tu servicio y reserva tu cita en segundos.
+        </p>
+      </div>
+      
+      {/* Grill de Componentes (Nuestros Legos) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+        gap: '20px',
+        width: '100%',
+        maxWidth: '1000px',
+        marginBottom: '3rem'
+      }}>
+        <ServiceCard 
+          title="Corte Clásico" 
+          price="250" 
+          duration="40" 
+          description="Corte de cabello a tijera o máquina con acabados precisos y perfilado de cuello."
+          onSelect={() => setSelectedService("Corte Clásico")}
         />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <ServiceCard 
+          title="Arreglo de Barba" 
+          price="150" 
+          duration="30" 
+          description="Alineado, rebaje y tratamiento con toalla caliente y aceites esenciales."
+          onSelect={() => setSelectedService("Arreglo de Barba")}
+        />
+        <ServiceCard 
+          title="Paquete Premium" 
+          price="350" 
+          duration="75" 
+          description="Corte completo, arreglo de barba VIP y facial express con mascarilla negra."
+          onSelect={() => setSelectedService("Paquete Premium")}
+        />
+      </div>
+
+      <BookingModal 
+        isOpen={selectedService !== null}
+        serviceTitle={selectedService || ""}
+        onClose={() => setSelectedService(null)}
+      />
+    </main>
   );
 }
