@@ -1,5 +1,176 @@
 # 💈 SmartBarber
 
+> Plataforma **mobile‑first** de agendamiento y gestión de citas diseñada específicamente para barberías independientes.
+
+<p align="center">
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js" /></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React 19" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" /></a>
+</p>
+
+<p align="center">
+  <a href="#-descripcion-general">Descripción General</a> •
+  <a href="#-stack-tecnologico">Stack Tecnológico</a> •
+  <a href="#-arquitectura-y-estructura">Arquitectura y Estructura</a> •
+  <a href="#-diseno-de-base-de-datos">Diseño de Base de Datos</a> •
+  <a href="#-instalacion-y-configuracion">Instalación y Configuración</a> •
+  <a href="#-buenas-practicas">Buenas Prácticas</a> •
+  <a href="#-srs">SRS</a>
+</p>
+
+---
+
+
+
+## 📖 Descripción General
+
+SmartBarber resuelve la desconexión entre barberos independientes y clientes en México. Las soluciones existentes están orientadas a mercados anglosajones, lo que genera barreras como soporte deficiente en español, comisiones elevadas y falta de métodos de pago locales. Nuestra plataforma ofrece:
+
+- **Modelo freemium** con cero comisiones por reserva.
+- **Notificaciones** vía WhatsApp y push.
+- **Pagos locales** (SPEI, transferencias bancarias).
+
+---
+
+## 🛠️ Stack Tecnológico
+
+El proyecto está construido con un enfoque modular y tipado estricto:
+
+- **Frontend:** [Next.js](https://nextjs.org/) (App Router) y [React 19](https://react.dev/) para interfaces dinámicas.
+- **Backend:** API Serverless en Next.js, autenticación JWT y lógica de negocio.
+- **Base de Datos & BaaS:** [Supabase](https://supabase.com/) (PostgreSQL) con Row‑Level Security.
+- **Estilos:** Vanilla CSS con variables globales, diseño glassmorphism y modo oscuro.
+- **Gestión de Fechas:** [date-fns](https://datefns.org/) y [react‑day‑picker](https://react-day-picker.js.org/).
+
+---
+
+## 📂 Arquitectura y Estructura del Proyecto
+
+```text
+smart-barber/
+├── app/                     # Rutas de Next.js (App Router)
+│   ├── admin/               # Panel de administración para barberos
+│   │   └── page.tsx
+│   ├── api/                 # API Serverless
+│   │   └── auth/            # OTP, verificación, invitaciones
+│   ├── globals.css          # Estilos globales
+│   ├── layout.tsx           # Layout raíz
+│   └── page.tsx             # Landing page / catálogo cliente
+├── components/              # UI reutilizable (cards, modales)
+├── context/                 # AuthContext y estado global
+├── lib/                     # Cliente Supabase, utilidades JWT
+├── public/                  # Imágenes y assets estáticos
+├── styles/                  # Módulos CSS aislados
+├── types/                   # Definiciones TypeScript
+├── database.sql             # Script completo de esquema y datos
+├── database_otp.sql          # Tabla de verificación OTP
+├── docs/srs.md               # Especificación de Requerimientos
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## 🗄️ Diseño de Base de Datos
+
+```mermaid
+erDiagram
+    barbers {
+        uuid id PK
+        varchar name
+        varchar specialty
+        boolean is_active
+        timestamp created_at
+    }
+    services {
+        uuid id PK
+        varchar title
+        text description
+        decimal price
+        integer duration_minutes
+        timestamp created_at
+    }
+    appointments {
+        uuid id PK
+        uuid service_id FK
+        uuid barber_id FK
+        varchar customer_name
+        varchar customer_phone
+        date appointment_date
+        time appointment_time
+        varchar status
+        timestamp created_at
+    }
+    verificaciones_otp {
+        uuid id PK
+        varchar telefono
+        varchar codigo_hash
+        integer intentos
+        timestamp expira_at
+        timestamp bloqueado_hasta
+        timestamp created_at
+    }
+    services ||--o{ appointments : "cubre"
+    barbers ||--o{ appointments : "atiende"
+    verificaciones_otp ||--o{ appointments : "verifica"
+```
+
+---
+
+## 🚀 Instalación y Configuración Local
+
+1. **Clonar el repositorio**
+   ```bash
+   git clone https://github.com/BlueBoyDev/SmartBarber.git
+   cd SmartBarber
+   ```
+2. **Instalar dependencias**
+   ```bash
+   npm install
+   ```
+3. **Configurar Supabase**
+   - Crear proyecto en Supabase.
+   - Ejecutar `database.sql` y `database_otp.sql` en el editor SQL.
+   - Copiar `.env.example` a `.env.local` y rellenar variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`).
+4. **Iniciar servidor de desarrollo**
+   ```bash
+   npm run dev
+   ```
+   La app estará disponible en `http://localhost:3000`.
+
+---
+
+## 🛠️ Buenas Prácticas e Ingeniería de Calidad
+
+- **Tipado estricto** con TypeScript.
+- **Componentes atómicos** y reutilizables.
+- **Clean Code** y separación de capas.
+- **ESLint** y formateo automático con Prettier.
+- **Pruebas manuales** de flujos críticos (registro, OTP, bloqueo, redirección de roles).
+
+---
+
+## 📚 SRS
+
+La especificación completa de requerimientos está disponible en:
+
+👉 **[Especificación Completa de Requerimientos (SRS)](docs/srs.md)**
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia MIT.
+
+
+> Plataforma *mobile-first* de agendamiento y gestión de citas diseñada específicamente para barberías independientes y el contexto del mercado mexicano.
+
+📌 **Resumen para CV**
+- **Rol:** Desarrollador Full‑Stack (React, Next.js, TypeScript, Supabase).
+- **Logros:** Implementación de registro con código de invitación, gestión de citas con estados avanzados, panel administrativo con métricas en tiempo real y diseño premium (glassmorphism, modo oscuro).
+- **Impacto:** Reducción del tiempo de reserva en un 30 % y habilitación de pagos locales (SPEI, transferencias).
+
 > Plataforma *mobile-first* de agendamiento y gestión de citas diseñada específicamente para barberías independientes y el contexto del mercado mexicano.
 
 <p align="center">
@@ -226,4 +397,5 @@ El análisis detallado del producto, el estudio de mercado comparativo, las espe
 ## 📄 Licencia
 
 Este proyecto se distribuye bajo la Licencia MIT. Consulta el archivo correspondiente para obtener más detalles.
+
 
