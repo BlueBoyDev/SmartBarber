@@ -96,9 +96,7 @@ export default function AdminDashboard() {
   const [cargando, setCargando] = useState(true);
   const [actualizando, setActualizando] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [fechaSeleccionada, setFechaSeleccionada] = useState(
-    new Date().toISOString().split('T')[0]
-  );
+  const [fechaSeleccionada, setFechaSeleccionada] = useState<string>(''); // Vacío significa "todas"
 
   // — Horarios —
   const [jornada, setJornada] = useState<JornadaDia[]>(JORNADA_DEFAULT);
@@ -138,7 +136,8 @@ export default function AdminDashboard() {
     if (!barbero?.id) return;
     setCargando(true); setError('');
     try {
-      const res = await fetch(`/api/barbero/citas?barbero_id=${barbero.id}&fecha=${fechaSeleccionada}`);
+      const fechaQuery = fechaSeleccionada === '' ? 'todas' : fechaSeleccionada;
+      const res = await fetch(`/api/barbero/citas?barbero_id=${barbero.id}&fecha=${fechaQuery}`);
       const data = await res.json();
       if (data.success) setCitas(data.citas);
       else setError(data.error || 'Error al cargar citas.');
@@ -404,11 +403,17 @@ export default function AdminDashboard() {
                 <input type="date" value={fechaSeleccionada} onChange={e => setFechaSeleccionada(e.target.value)}
                   style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '0.9rem', outline: 'none', cursor: 'pointer' }} />
               </div>
+              <button onClick={() => setFechaSeleccionada('')}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: fechaSeleccionada === '' ? 'var(--color-primary)' : 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 14px', color: fechaSeleccionada === '' ? '#000' : 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: fechaSeleccionada === '' ? 'bold' : 'normal' }}>
+                Todas
+              </button>
               <button onClick={cargarCitas} disabled={cargando}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 14px', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>
                 <RefreshCw size={14} style={{ animation: cargando ? 'spin 1s linear infinite' : 'none' }} />Actualizar
               </button>
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{formatFecha(fechaSeleccionada + 'T12:00:00')}</span>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                {fechaSeleccionada === '' ? 'Mostrando todo el historial' : formatFecha(fechaSeleccionada + 'T12:00:00')}
+              </span>
             </div>
 
             {/* Lista citas */}
@@ -417,7 +422,7 @@ export default function AdminDashboard() {
             ) : citas.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px' }}>
                 <Calendar size={40} color="var(--color-border)" style={{ marginBottom: '12px' }} />
-                <p style={{ color: 'var(--color-text-muted)' }}>No hay citas para este día.</p>
+                <p style={{ color: 'var(--color-text-muted)' }}>No hay citas {fechaSeleccionada === '' ? 'en el historial' : 'para este día'}.</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

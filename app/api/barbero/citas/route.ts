@@ -12,10 +12,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'barbero_id requerido.' }, { status: 400 });
     }
 
-    const fechaInicio = `${fecha}T00:00:00.000Z`;
-    const fechaFin = `${fecha}T23:59:59.999Z`;
-
-    const { data: citas, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('citas')
       .select(`
         id,
@@ -35,9 +32,16 @@ export async function GET(request: Request) {
         )
       `)
       .eq('barbero_id', barbero_id)
-      .gte('fecha_hora', fechaInicio)
-      .lte('fecha_hora', fechaFin)
       .order('fecha_hora', { ascending: true });
+
+    if (fecha !== 'todas') {
+      // Use local time parsing to match the booking creation logic
+      const fechaInicio = new Date(`${fecha}T00:00:00`).toISOString();
+      const fechaFin = new Date(`${fecha}T23:59:59`).toISOString();
+      query = query.gte('fecha_hora', fechaInicio).lte('fecha_hora', fechaFin);
+    }
+
+    const { data: citas, error } = await query;
 
     if (error) {
       console.error('Error citas:', error);
