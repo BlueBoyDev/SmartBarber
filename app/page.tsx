@@ -19,7 +19,81 @@ export default function Home() {
   const [infoMsg, setInfoMsg] = useState("");
   const [simulatedCode, setSimulatedCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedService, setSelectedService] = useState<string | null>(null);
+  const [selectedService, setSelectedService] = useState<any>(null);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // LÓGICA DE BARBEROS Y SERVICIOS
+  // ──────────────────────────────────────────────────────────────────────────
+  const [barberos, setBarberos] = useState<any[]>([]);
+
+  const formatJornada = (horarios: any[]) => {
+    if (!horarios || horarios.length === 0) return "Lun-Sáb: 09:00 - 19:00";
+    const diasNombres = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const groups: { [time: string]: number[] } = {};
+    let hasActive = false;
+    horarios.forEach(h => {
+      if (!h.activo) return;
+      hasActive = true;
+      const key = `${h.hora_inicio.substring(0, 5)} - ${h.hora_fin.substring(0, 5)}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(h.dia_semana);
+    });
+    if (!hasActive) return 'Días libres';
+
+    return Object.keys(groups).map(time => {
+      const days = groups[time].sort();
+      if (days.length === 1) return `${diasNombres[days[0]]}: ${time}`;
+      let startDay = days[0], prevDay = days[0];
+      const ranges = [];
+      for (let i = 1; i <= days.length; i++) {
+        if (i < days.length && days[i] === prevDay + 1) prevDay = days[i];
+        else {
+          ranges.push(startDay === prevDay ? diasNombres[startDay] : `${diasNombres[startDay]}-${diasNombres[prevDay]}`);
+          if (i < days.length) { startDay = days[i]; prevDay = days[i]; }
+        }
+      }
+      return `${ranges.join(', ')}: ${time}`;
+    }).join(' | ');
+  };
+  const [selectedBarbero, setSelectedBarbero] = useState<any>(null);
+  const [servicios, setServicios] = useState<any[]>([]);
+  const [loadingDatos, setLoadingDatos] = useState(false);
+
+  // Cargar barberos al iniciar o al loguearse
+  useEffect(() => {
+    if (isAuthenticated && user?.tipo === 'cliente') {
+      const fetchBarberos = async () => {
+        setLoadingDatos(true);
+        try {
+          const res = await fetch('/api/barberos');
+          const data = await res.json();
+          if (data.barberos) setBarberos(data.barberos);
+        } catch (error) {
+          console.error("Error cargando barberos", error);
+        }
+        setLoadingDatos(false);
+      };
+      fetchBarberos();
+    }
+  }, [isAuthenticated, user]);
+
+  // Cargar servicios cuando se selecciona un barbero
+  useEffect(() => {
+    if (selectedBarbero) {
+      const fetchServicios = async () => {
+        setLoadingDatos(true);
+        try {
+          const res = await fetch(`/api/servicios?barbero_id=${selectedBarbero.id}`);
+          const data = await res.json();
+          if (data.servicios) setServicios(data.servicios);
+        } catch (error) {
+          console.error("Error cargando servicios", error);
+        }
+        setLoadingDatos(false);
+      };
+      fetchServicios();
+    }
+  }, [selectedBarbero]);
 
   useEffect(() => {
     if (isAuthenticated && user?.tipo === 'barbero') {
@@ -368,31 +442,105 @@ export default function Home() {
         <h1 style={{ color: 'var(--color-primary)', fontSize: '3.5rem', marginBottom: '1rem', letterSpacing: '-1px' }}>
           SmartBarber
         </h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '1.2rem', maxWidth: '600px' }}>
-          Hola {user?.nombre}. Selecciona tu servicio y reserva tu cita en segundos.
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto' }}>
+          {selectedBarbero 
+            ? `Servicios de ${selectedBarbero.nombre}`
+            : `Hola ${user?.nombre}. Selecciona a tu barbero para comenzar.`}
         </p>
+        {selectedBarbero && (
+          <button 
+            onClick={() => { setSelectedBarbero(null); setSelectedService(null); }}
+            style={{ marginTop: '15px', background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            ← Volver a lista de barberos
+          </button>
+        )}
       </div>
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '20px', width: '100%', maxWidth: '1000px', marginBottom: '3rem'
-      }}>
-        <ServiceCard title="Corte Clasico" price="250" duration="40"
-          description="Corte de cabello a tijera o maquina con acabados precisos y perfilado de cuello."
-          onSelect={() => setSelectedService("Corte Clasico")} />
-        <ServiceCard title="Arreglo de Barba" price="150" duration="30"
-          description="Alineado, rebaje y tratamiento con toalla caliente y aceites esenciales."
-          onSelect={() => setSelectedService("Arreglo de Barba")} />
-        <ServiceCard title="Paquete Premium" price="350" duration="75"
-          description="Corte completo, arreglo de barba VIP y facial express con mascarilla negra."
-          onSelect={() => setSelectedService("Paquete Premium")} />
-      </div>
+      {loadingDatos ? (
+        <div style={{ color: 'var(--color-text-muted)' }}>Cargando información...</div>
+      ) : !selectedBarbero ? (
+        // ─── PASO 1: SELECCIONAR BARBERO ───
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '20px', width: '100%', maxWidth: '1000px', marginBottom: '3rem'
+        }}>
+          {barberos.length === 0 ? (
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', width: '100%' }}>No hay barberos disponibles en este momento.</p>
+          ) : (
+            barberos.map(b => (
+              <div key={b.id} 
+                onClick={() => setSelectedBarbero(b)}
+                style={{
+                  backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                  borderRadius: '12px', padding: '20px', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  transition: 'transform 0.2s',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                <div style={{
+                  width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#222',
+                  display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: '15px',
+                  border: '2px solid var(--color-primary)', overflow: 'hidden'
+                }}>
+                  {b.fotoUrl ? (
+                    <img src={b.fotoUrl} alt={b.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <User size={30} color="var(--color-primary)" />
+                  )}
+                </div>
+                <h3 style={{ fontSize: '1.2rem', marginBottom: '5px' }}>{b.nombre}</h3>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center', marginBottom: '6px' }}>
+                  {b.descripcion || 'Barbero profesional'}
+                </p>
+                <div style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: '6px 12px', borderRadius: '4px', marginBottom: '10px', width: '100%' }}>
+                  <p style={{ color: 'var(--color-primary)', fontSize: '0.75rem', textAlign: 'center', fontWeight: 'bold' }}>
+                    {formatJornada(b.horarios)}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#f1c40f', fontSize: '0.9rem' }}>
+                  ★ {b.rating || 'Nuevo'}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        // ─── PASO 2: SELECCIONAR SERVICIO ───
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '20px', width: '100%', maxWidth: '1000px', marginBottom: '3rem'
+        }}>
+          {servicios.length === 0 ? (
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', width: '100%' }}>Este barbero aún no tiene servicios configurados.</p>
+          ) : (
+            servicios.map(s => (
+              <ServiceCard 
+                key={s.id}
+                title={s.nombre} 
+                price={s.precio.toString()} 
+                duration={s.duracion_min.toString()}
+                description={`${s.duracion_min} min - $${s.precio}`}
+                onSelect={() => setSelectedService(s)} 
+              />
+            ))
+          )}
+        </div>
+      )}
 
-      <BookingModal
-        isOpen={selectedService !== null}
-        serviceTitle={selectedService || ""}
-        onClose={() => setSelectedService(null)}
-      />
+      {selectedBarbero && selectedService && (
+        <BookingModal
+          isOpen={selectedService !== null}
+          serviceTitle={typeof selectedService === 'string' ? selectedService : selectedService.nombre}
+          serviceId={typeof selectedService === 'string' ? null : selectedService.id}
+          barberoId={selectedBarbero.id}
+          barberoNombre={selectedBarbero.nombre}
+          onClose={() => setSelectedService(null)}
+        />
+      )}
     </main>
   );
 }

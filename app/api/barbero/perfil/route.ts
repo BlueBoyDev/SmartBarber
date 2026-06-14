@@ -30,3 +30,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Error en el servidor.' }, { status: 500 });
   }
 }
+
+// PATCH /api/barbero/perfil
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { barbero_id, descripcion } = body;
+
+    if (!barbero_id) {
+      return NextResponse.json({ success: false, error: 'barbero_id requerido.' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('barberos')
+      .update({ descripcion })
+      .eq('id', barbero_id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: 'Error al actualizar descripción.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, barbero: data });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: 'Error en el servidor.' }, { status: 500 });
+  }
+}

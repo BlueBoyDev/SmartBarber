@@ -90,7 +90,7 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   // — Estado global —
-  const [tab, setTab] = useState<'citas' | 'horarios'>('citas');
+  const [tab, setTab] = useState<'citas' | 'horarios' | 'servicios'>('citas');
   const [citas, setCitas] = useState<Cita[]>([]);
   const [barbero, setBarbero] = useState<BarberoProfile | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -107,6 +107,17 @@ export default function AdminDashboard() {
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null);
   const [guardandoJornada, setGuardandoJornada] = useState(false);
   const [bloqueandoSlot, setBloqueandoSlot] = useState<string | null>(null);
+
+  // — Perfil Editar —
+  const [editandoDesc, setEditandoDesc] = useState(false);
+  const [nuevaDesc, setNuevaDesc] = useState('');
+  const [guardandoDesc, setGuardandoDesc] = useState(false);
+
+  // — Servicios —
+  const [servicios, setServicios] = useState<Servicio[]>([]);
+  const [cargandoServicios, setCargandoServicios] = useState(false);
+  const [editandoServicio, setEditandoServicio] = useState<Servicio | null>(null);
+  const [nuevoServicio, setNuevoServicio] = useState({ nombre: '', duracion_min: 30, precio: 100 });
 
   // ─ Auth guard ─
   useEffect(() => {
@@ -154,6 +165,21 @@ export default function AdminDashboard() {
   }, [barbero?.id, mesActual]);
 
   useEffect(() => { if (tab === 'horarios') cargarHorarios(); }, [tab, cargarHorarios]);
+
+  // ─ Servicios: cargar lista ─
+  const cargarServicios = useCallback(async () => {
+    if (!barbero?.id) return;
+    setCargandoServicios(true);
+    try {
+      const res = await fetch(`/api/barbero/servicios?barbero_id=${barbero.id}`);
+      const data = await res.json();
+      if (data.success) setServicios(data.servicios);
+      else setError(data.error || 'Error al cargar servicios.');
+    } catch { setError('Error de conexión.'); }
+    finally { setCargandoServicios(false); }
+  }, [barbero?.id]);
+
+  useEffect(() => { if (tab === 'servicios') cargarServicios(); }, [tab, cargarServicios]);
 
   // ─ Acciones: citas ─
   const actualizarEstado = async (cita_id: string, estado: string) => {
@@ -217,6 +243,25 @@ export default function AdminDashboard() {
     finally { setBloqueandoSlot(null); }
   };
 
+  // ─ Acciones: guardar descripción ─
+  const guardarDescripcion = async () => {
+    if (!barbero?.id) return;
+    setGuardandoDesc(true);
+    try {
+      const res = await fetch('/api/barbero/perfil', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barbero_id: barbero.id, descripcion: nuevaDesc })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBarbero({ ...barbero, descripcion: nuevaDesc });
+        setEditandoDesc(false);
+      } else setError(data.error || 'Error al guardar descripción.');
+    } catch { setError('Error de conexión.'); }
+    finally { setGuardandoDesc(false); }
+  };
+
   // ─ Guards ─
   if (isLoading || !isAuthenticated || user?.tipo !== 'barbero') {
     return (
@@ -275,10 +320,26 @@ export default function AdminDashboard() {
               {barbero && (<span style={{ marginLeft: '10px' }}><MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />{barbero.direccion}</span>)}
             </p>
             {barbero && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', marginBottom: '8px' }}>
                 <Star size={14} color="#f1c40f" fill="#f1c40f" />
                 <span style={{ color: '#f1c40f', fontSize: '0.85rem', fontWeight: 600 }}>{Number(barbero.rating_promedio).toFixed(1)}</span>
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>calificación promedio</span>
+              </div>
+            )}
+            {barbero && (
+              <div style={{ marginTop: '4px' }}>
+                {editandoDesc ? (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input type="text" value={nuevaDesc} onChange={e => setNuevaDesc(e.target.value)} style={{ backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', color: 'var(--color-text)', fontSize: '0.85rem', width: '250px' }} />
+                    <button onClick={guardarDescripcion} disabled={guardandoDesc} style={{ backgroundColor: 'var(--color-primary)', color: '#000', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>Guardar</button>
+                    <button onClick={() => setEditandoDesc(false)} style={{ backgroundColor: 'transparent', color: 'var(--color-text-muted)', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}>Cancelar</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                    <span style={{ fontStyle: 'italic' }}>{barbero.descripcion || 'Sin descripción'}</span>
+                    <button onClick={() => { setNuevaDesc(barbero.descripcion || ''); setEditandoDesc(true); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Editar</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -293,7 +354,7 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: '0', marginBottom: '28px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-          {([['citas', <Calendar key="c" size={15} />, 'Citas del día'], ['horarios', <Settings key="h" size={15} />, 'Gestión de Horarios']] as const).map(([key, icon, label]) => (
+          {([['citas', <Calendar key="c" size={15} />, 'Citas del día'], ['horarios', <Settings key="h" size={15} />, 'Gestión de Horarios'], ['servicios', <Scissors key="s" size={15} />, 'Servicios']] as const).map(([key, icon, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -637,6 +698,73 @@ export default function AdminDashboard() {
                 )}
               </div>
             )}
+          </div>
+        )}
+        {/* ═══ TAB: SERVICIOS ════════════════════════════════════════════════════ */}
+        {tab === 'servicios' && (
+          <div>
+            <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '20px', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text)' }}>{editandoServicio ? 'Editar Servicio' : 'Añadir Nuevo Servicio'}</h2>
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '6px', display: 'block' }}>Nombre del Servicio</label>
+                  <input type="text" value={editandoServicio ? editandoServicio.nombre : nuevoServicio.nombre} onChange={e => editandoServicio ? setEditandoServicio({...editandoServicio, nombre: e.target.value}) : setNuevoServicio({...nuevoServicio, nombre: e.target.value})} style={{ width: '100%', backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '10px', color: 'var(--color-text)' }} placeholder="Ej. Corte Clásico" />
+                </div>
+                <div style={{ width: '120px' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '6px', display: 'block' }}>Duración (min)</label>
+                  <input type="number" step="15" min="15" value={editandoServicio ? editandoServicio.duracion_min : nuevoServicio.duracion_min} onChange={e => editandoServicio ? setEditandoServicio({...editandoServicio, duracion_min: Number(e.target.value)}) : setNuevoServicio({...nuevoServicio, duracion_min: Number(e.target.value)})} style={{ width: '100%', backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '10px', color: 'var(--color-text)' }} />
+                </div>
+                <div style={{ width: '120px' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '6px', display: 'block' }}>Precio ($)</label>
+                  <input type="number" min="10" value={editandoServicio ? editandoServicio.precio : nuevoServicio.precio} onChange={e => editandoServicio ? setEditandoServicio({...editandoServicio, precio: Number(e.target.value)}) : setNuevoServicio({...nuevoServicio, precio: Number(e.target.value)})} style={{ width: '100%', backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '10px', color: 'var(--color-text)' }} />
+                </div>
+                <button onClick={async () => {
+                  if (!barbero?.id) return;
+                  const payload = editandoServicio || { ...nuevoServicio, barbero_id: barbero.id };
+                  const method = editandoServicio ? 'PATCH' : 'POST';
+                  try {
+                    const res = await fetch('/api/barbero/servicios', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    const data = await res.json();
+                    if (data.success) {
+                      cargarServicios();
+                      if (editandoServicio) setEditandoServicio(null);
+                      else setNuevoServicio({ nombre: '', duracion_min: 30, precio: 100 });
+                    } else setError(data.error);
+                  } catch { setError('Error al guardar.'); }
+                }} style={{ backgroundColor: 'var(--color-primary)', color: '#000', border: 'none', borderRadius: '6px', padding: '10px 20px', fontWeight: 600, cursor: 'pointer', height: '41px' }}>
+                  {editandoServicio ? 'Actualizar' : 'Añadir'}
+                </button>
+                {editandoServicio && (
+                  <button onClick={() => setEditandoServicio(null)} style={{ backgroundColor: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '10px 20px', fontWeight: 600, cursor: 'pointer', height: '41px' }}>Cancelar</button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: '12px' }}>
+              {cargandoServicios ? <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '40px' }}>Cargando servicios...</p> : servicios.map(s => (
+                <div key={s.id} style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: '4px', color: 'var(--color-text)' }}>{s.nombre}</div>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{s.duracion_min} min · <span style={{ color: '#2ecc71', fontWeight: 600 }}>${s.precio}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => setEditandoServicio(s)} style={{ backgroundColor: 'transparent', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 12px', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.85rem' }}>Editar</button>
+                    <button onClick={async () => {
+                      if(confirm('¿Eliminar servicio?')) {
+                        try {
+                          const res = await fetch(`/api/barbero/servicios?id=${s.id}`, { method: 'DELETE' });
+                          if (res.ok) cargarServicios();
+                          else setError('Error al eliminar');
+                        } catch { setError('Error al eliminar'); }
+                      }
+                    }} style={{ backgroundColor: 'transparent', border: '1px solid #e74c3c', borderRadius: '6px', padding: '6px 12px', color: '#e74c3c', cursor: 'pointer', fontSize: '0.85rem' }}>Eliminar</button>
+                  </div>
+                </div>
+              ))}
+              {!cargandoServicios && servicios.length === 0 && (
+                <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '40px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px' }}>No tienes servicios registrados.</p>
+              )}
+            </div>
           </div>
         )}
       </div>
