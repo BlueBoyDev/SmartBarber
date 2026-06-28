@@ -29,6 +29,11 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       console.log('existingUser encontrado:', existingUser);
+
+      if (existingUser && existingUser.tipo !== 'barbero') {
+        return NextResponse.json({ error: 'Este numero esta registrado como cliente. Inicia sesion en la pagina principal.' }, { status: 403 });
+      }
+
       const esBarberoExistente = existingUser?.tipo === 'barbero';
       console.log('esBarberoExistente:', esBarberoExistente);
 

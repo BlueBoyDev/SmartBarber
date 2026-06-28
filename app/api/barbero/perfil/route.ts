@@ -35,24 +35,41 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { barbero_id, descripcion } = body;
+    const { barbero_id, usuario_id, descripcion, nombre, direccion } = body;
 
     if (!barbero_id) {
       return NextResponse.json({ success: false, error: 'barbero_id requerido.' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    // Actualizar barberos (descripcion y direccion)
+    const updateDataBarbero: any = {};
+    if (descripcion !== undefined) updateDataBarbero.descripcion = descripcion;
+    if (direccion !== undefined) updateDataBarbero.direccion = direccion;
+
+    const { data: barberoData, error: barberoError } = await supabaseAdmin
       .from('barberos')
-      .update({ descripcion })
+      .update(updateDataBarbero)
       .eq('id', barbero_id)
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json({ success: false, error: 'Error al actualizar descripción.' }, { status: 500 });
+    if (barberoError) {
+      return NextResponse.json({ success: false, error: 'Error al actualizar perfil de barbero.' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, barbero: data });
+    // Actualizar usuarios (nombre) si se proporciona
+    if (nombre !== undefined && usuario_id) {
+      const { error: usuarioError } = await supabaseAdmin
+        .from('usuarios')
+        .update({ nombre })
+        .eq('id', usuario_id);
+      
+      if (usuarioError) {
+        return NextResponse.json({ success: false, error: 'Error al actualizar nombre de usuario.' }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ success: true, barbero: barberoData, nombre_actualizado: nombre });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Error en el servidor.' }, { status: 500 });
   }

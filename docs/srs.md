@@ -386,6 +386,56 @@ Almacena las evaluaciones del servicio provistas por los clientes tras completar
 | **comentario** | VARCHAR(500) | Opcional | Reseña escrita. |
 | **created_at** | TIMESTAMPTZ | DEFAULT NOW() | Fecha de registro del feedback. |
 
+#### 7. Tabla: `verificaciones_otp`
+Gestiona el estado y validación de los códigos SMS enviados a los usuarios para el registro e inicio de sesión.
+
+| Campo | Tipo de Datos | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| **id** | UUID | PRIMARY KEY | Identificador único del registro OTP. |
+| **telefono** | VARCHAR | NOT NULL | Número de teléfono asociado al código. |
+| **codigo_hash** | VARCHAR | NOT NULL | Hash criptográfico del OTP de 6 dígitos. |
+| **intentos** | INTEGER | DEFAULT 0 | Contador para mitigar ataques de fuerza bruta. |
+| **expira_at** | TIMESTAMPTZ | NOT NULL | Marca de tiempo límite de validez del OTP. |
+| **bloqueado_hasta** | TIMESTAMPTZ | Opcional | Tiempo de penalización tras exceder intentos. |
+| **created_at** | TIMESTAMPTZ | DEFAULT NOW() | Fecha de generación del código. |
+
+#### 8. Tabla: `codigos_invitacion`
+Sistema de referidos o accesos exclusivos al registro de nuevos usuarios.
+
+| Campo | Tipo de Datos | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| **id** | UUID | PRIMARY KEY | Identificador del código. |
+| **codigo** | VARCHAR | UNIQUE, NOT NULL | Código alfanumérico que el usuario debe ingresar. |
+| **usado** | BOOLEAN | DEFAULT FALSE | Bandera para indicar si el código ya fue reclamado. |
+| **usado_por** | VARCHAR | Opcional | Referencia de quién redimió el código. |
+| **created_at** | TIMESTAMPTZ | DEFAULT NOW() | Fecha de creación. |
+
+#### 9. Tabla: `horario_base`
+Estructura semanal estática de horas hábiles que cada barbero configura.
+
+| Campo | Tipo de Datos | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| **id** | UUID | PRIMARY KEY | Identificador único del bloque. |
+| **barbero_id** | UUID | FOREIGN KEY | Enlace al perfil del barbero (`barberos.id`). |
+| **dia_semana** | SMALLINT | CHECK (0 - 6) | Representación numérica (0=Domingo, 6=Sábado). |
+| **hora_inicio** | TIME | NOT NULL | Hora de apertura del turno. |
+| **hora_fin** | TIME | NOT NULL | Hora de cierre del turno. |
+| **activo** | BOOLEAN | DEFAULT TRUE | Habilita o deshabilita este día de la semana. |
+| **created_at** | TIMESTAMPTZ | DEFAULT NOW() | Fecha de creación del bloque. |
+
+#### 10. Tabla: `horarios_bloqueados`
+Excepciones temporales a la agenda (vacaciones, comida, eventos personales).
+
+| Campo | Tipo de Datos | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| **id** | UUID | PRIMARY KEY | Identificador de la excepción. |
+| **barbero_id** | UUID | FOREIGN KEY | Enlace al perfil del barbero (`barberos.id`). |
+| **fecha** | DATE | NOT NULL | Fecha exacta del bloqueo de agenda. |
+| **hora_inicio** | TIME | Opcional | Inicio del bloqueo (si es NULL asume día completo). |
+| **hora_fin** | TIME | Opcional | Fin del bloqueo. |
+| **motivo** | VARCHAR | Opcional | Razón personal o administrativa del bloqueo. |
+| **created_at** | TIMESTAMPTZ | DEFAULT NOW() | Fecha de creación. |
+
 ---
 
 ### 8.2 Integridad y Relaciones

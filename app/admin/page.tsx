@@ -107,9 +107,9 @@ export default function AdminDashboard() {
   const [bloqueandoSlot, setBloqueandoSlot] = useState<string | null>(null);
 
   // — Perfil Editar —
-  const [editandoDesc, setEditandoDesc] = useState(false);
-  const [nuevaDesc, setNuevaDesc] = useState('');
-  const [guardandoDesc, setGuardandoDesc] = useState(false);
+  const [editandoPerfil, setEditandoPerfil] = useState(false);
+  const [nuevoPerfil, setNuevoPerfil] = useState({ nombre: '', direccion: '', descripcion: '' });
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
 
   // — Servicios —
   const [servicios, setServicios] = useState<Servicio[]>([]);
@@ -242,23 +242,39 @@ export default function AdminDashboard() {
     finally { setBloqueandoSlot(null); }
   };
 
-  // ─ Acciones: guardar descripción ─
-  const guardarDescripcion = async () => {
-    if (!barbero?.id) return;
-    setGuardandoDesc(true);
+  // ─ Acciones: guardar perfil ─
+  const guardarPerfil = async () => {
+    if (!barbero?.id || !user?.id) return;
+    setGuardandoPerfil(true);
     try {
       const res = await fetch('/api/barbero/perfil', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ barbero_id: barbero.id, descripcion: nuevaDesc })
+        body: JSON.stringify({ 
+          barbero_id: barbero.id, 
+          usuario_id: user.id,
+          nombre: nuevoPerfil.nombre,
+          direccion: nuevoPerfil.direccion,
+          descripcion: nuevoPerfil.descripcion 
+        })
       });
       const data = await res.json();
       if (data.success) {
-        setBarbero({ ...barbero, descripcion: nuevaDesc });
-        setEditandoDesc(false);
-      } else setError(data.error || 'Error al guardar descripción.');
+        setBarbero({ ...barbero, descripcion: nuevoPerfil.descripcion, direccion: nuevoPerfil.direccion });
+        if (data.nombre_actualizado) {
+          const stored = localStorage.getItem('sb_user');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.nombre = data.nombre_actualizado;
+            localStorage.setItem('sb_user', JSON.stringify(parsed));
+            window.location.reload();
+            return; // Detener ejecución para que la recarga fluya
+          }
+        }
+        setEditandoPerfil(false);
+      } else setError(data.error || 'Error al guardar perfil.');
     } catch { setError('Error de conexión.'); }
-    finally { setGuardandoDesc(false); }
+    finally { setGuardandoPerfil(false); }
   };
 
   // ─ Guards ─
@@ -314,32 +330,48 @@ export default function AdminDashboard() {
               <Scissors color="var(--color-primary)" size={22} />
               <h1 style={{ color: 'var(--color-primary)', fontSize: '1.8rem', letterSpacing: '-0.5px' }}>Panel del Barbero</h1>
             </div>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-              {user.nombre}
-              {barbero && (<span style={{ marginLeft: '10px' }}><MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />{barbero.direccion}</span>)}
-            </p>
-            {barbero && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', marginBottom: '8px' }}>
-                <Star size={14} color="#f1c40f" fill="#f1c40f" />
-                <span style={{ color: '#f1c40f', fontSize: '0.85rem', fontWeight: 600 }}>{Number(barbero.rating_promedio).toFixed(1)}</span>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>calificación promedio</span>
+            
+            {editandoPerfil && barbero ? (
+              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'block' }}>Nombre</label>
+                  <input type="text" value={nuevoPerfil.nombre} onChange={e => setNuevoPerfil({...nuevoPerfil, nombre: e.target.value})} style={{ backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', color: 'var(--color-text)', fontSize: '0.85rem', width: '300px', maxWidth: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'block' }}>Dirección</label>
+                  <input type="text" value={nuevoPerfil.direccion} onChange={e => setNuevoPerfil({...nuevoPerfil, direccion: e.target.value})} style={{ backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', color: 'var(--color-text)', fontSize: '0.85rem', width: '300px', maxWidth: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'block' }}>Descripción / Bio</label>
+                  <input type="text" value={nuevoPerfil.descripcion} onChange={e => setNuevoPerfil({...nuevoPerfil, descripcion: e.target.value})} style={{ backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', color: 'var(--color-text)', fontSize: '0.85rem', width: '300px', maxWidth: '100%' }} />
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
+                  <button onClick={guardarPerfil} disabled={guardandoPerfil} style={{ backgroundColor: 'var(--color-primary)', color: '#000', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>{guardandoPerfil ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setEditandoPerfil(false)} style={{ backgroundColor: 'transparent', color: 'var(--color-text-muted)', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}>Cancelar</button>
+                </div>
               </div>
-            )}
-            {barbero && (
-              <div style={{ marginTop: '4px' }}>
-                {editandoDesc ? (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input type="text" value={nuevaDesc} onChange={e => setNuevaDesc(e.target.value)} style={{ backgroundColor: '#1c1c1e', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', color: 'var(--color-text)', fontSize: '0.85rem', width: '250px' }} />
-                    <button onClick={guardarDescripcion} disabled={guardandoDesc} style={{ backgroundColor: 'var(--color-primary)', color: '#000', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>Guardar</button>
-                    <button onClick={() => setEditandoDesc(false)} style={{ backgroundColor: 'transparent', color: 'var(--color-text-muted)', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}>Cancelar</button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                    <span style={{ fontStyle: 'italic' }}>{barbero.descripcion || 'Sin descripción'}</span>
-                    <button onClick={() => { setNuevaDesc(barbero.descripcion || ''); setEditandoDesc(true); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Editar</button>
+            ) : (
+              <>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                  {user.nombre}
+                  {barbero && (<span style={{ marginLeft: '10px' }}><MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />{barbero.direccion}</span>)}
+                </p>
+                {barbero && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', marginBottom: '8px' }}>
+                    <Star size={14} color="#f1c40f" fill="#f1c40f" />
+                    <span style={{ color: '#f1c40f', fontSize: '0.85rem', fontWeight: 600 }}>{Number(barbero.rating_promedio).toFixed(1)}</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>calificación promedio</span>
                   </div>
                 )}
-              </div>
+                {barbero && (
+                  <div style={{ marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                      <span style={{ fontStyle: 'italic' }}>{barbero.descripcion || 'Sin descripción'}</span>
+                      <button onClick={() => { setNuevoPerfil({ nombre: user.nombre || '', direccion: barbero.direccion || '', descripcion: barbero.descripcion || '' }); setEditandoPerfil(true); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Editar Perfil</button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

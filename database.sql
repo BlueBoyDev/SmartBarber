@@ -1,274 +1,174 @@
 -- ==============================================================================
--- SCRIPT DE BASE DE DATOS - SMARTBARBER
--- Gestor: PostgreSQL (optimizado para Supabase)
--- Normalización: Tercera Forma Normal (3FN)
+-- SMARTBARBER - SCRIPT DE BASE DE DATOS UNIFICADO
+-- Incluye: Tablas base, OTP, Horarios y Datos Semilla
 -- ==============================================================================
 
--- Habilitar extensión para generación de identificadores únicos UUID
+-- 1. Habilitar extensión para generar UUIDs automáticamente
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Limpieza preventiva de tablas previas (respetando dependencias)
-DROP TABLE IF EXISTS calificaciones CASCADE;
-DROP TABLE IF EXISTS pagos CASCADE;
-DROP TABLE IF EXISTS citas CASCADE;
-DROP TABLE IF EXISTS servicios CASCADE;
-DROP TABLE IF EXISTS barberos CASCADE;
-DROP TABLE IF EXISTS usuarios CASCADE;
-DROP TABLE IF EXISTS verificaciones_otp CASCADE;
+-- ==============================================================================
+-- TABLAS INDEPENDIENTES
+-- ==============================================================================
 
--- ==========================================
--- 1. TABLA: usuarios
--- ==========================================
-CREATE TABLE usuarios (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    telefono VARCHAR(13) NOT NULL UNIQUE CHECK (telefono ~ '^\+[1-9]\d{1,14}$'), -- Formato E.164 (ej. +521234567890)
-    nombre VARCHAR(100) NOT NULL,
-    foto_url TEXT,
-    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('cliente', 'barbero')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE public.usuarios (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  telefono character varying NOT NULL UNIQUE CHECK (telefono::text ~ '^\+[1-9]\d{1,14}$'::text),
+  nombre character varying NOT NULL,
+  foto_url text,
+  tipo character varying NOT NULL CHECK (tipo::text = ANY (ARRAY['cliente'::character varying, 'barbero'::character varying]::text[])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT usuarios_pkey PRIMARY KEY (id)
 );
 
--- ==========================================
--- 2. TABLA: barberos
--- ==========================================
-CREATE TABLE barberos (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    usuario_id UUID REFERENCES usuarios(id) ON DELETE CASCADE UNIQUE,
-    descripcion TEXT,
-    rating_promedio DECIMAL(3,2) DEFAULT 0.00 CHECK (rating_promedio BETWEEN 0.00 AND 5.00),
-    direccion VARCHAR(255) NOT NULL,
-    lat DOUBLE PRECISION NOT NULL,
-    lng DOUBLE PRECISION NOT NULL,
-    activo BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE public.verificaciones_otp (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  telefono character varying NOT NULL,
+  codigo_hash character varying NOT NULL,
+  intentos integer DEFAULT 0,
+  expira_at timestamp with time zone NOT NULL,
+  bloqueado_hasta timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT verificaciones_otp_pkey PRIMARY KEY (id)
 );
 
--- ==========================================
--- 3. TABLA: servicios
--- ==========================================
-CREATE TABLE servicios (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    barbero_id UUID REFERENCES barberos(id) ON DELETE CASCADE,
-    nombre VARCHAR(100) NOT NULL,
-    duracion_min INTEGER NOT NULL CHECK (duracion_min >= 15 AND duracion_min % 15 = 0), -- Bloques de 15 minutos
-    precio DECIMAL(8,2) NOT NULL CHECK (precio >= 10.00), -- Mínimo $10 MXN
-    activo BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ==========================================
--- 4. TABLA: citas
--- ==========================================
-CREATE TABLE citas (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    cliente_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
-    barbero_id UUID REFERENCES barberos(id) ON DELETE SET NULL,
-    servicio_id UUID REFERENCES servicios(id) ON DELETE SET NULL,
-    fecha_hora TIMESTAMP WITH TIME ZONE NOT NULL,
-    estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'confirmada', 'en_curso', 'completada', 'cancelada')),
-    notas TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ==========================================
--- 5. TABLA: pagos
--- ==========================================
-CREATE TABLE pagos (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    cita_id UUID REFERENCES citas(id) ON DELETE RESTRICT UNIQUE, -- Restrictivo para evitar borrar pagos auditables
-    monto DECIMAL(8,2) NOT NULL CHECK (monto >= 0.00),
-    metodo VARCHAR(20) NOT NULL CHECK (metodo IN ('tarjeta', 'spei', 'efectivo')),
-    referencia_ext VARCHAR(100) UNIQUE, -- ID devuelto por Conekta
-    estado VARCHAR(20) NOT NULL CHECK (estado IN ('pendiente', 'pagado', 'reembolsado', 'fallido')),
-    pagado_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ==========================================
--- 6. TABLA: calificaciones
--- ==========================================
-CREATE TABLE calificaciones (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    cita_id UUID REFERENCES citas(id) ON DELETE CASCADE UNIQUE, -- Una reseña por cita
-    cliente_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
-    estrellas INTEGER NOT NULL CHECK (estrellas BETWEEN 1 AND 5),
-    comentario VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ==========================================
--- 7. TABLA: verificaciones_otp
--- ==========================================
-CREATE TABLE verificaciones_otp (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    telefono VARCHAR(13) NOT NULL,
-    codigo_hash VARCHAR(64) NOT NULL,
-    intentos INTEGER DEFAULT 0,
-    expira_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    bloqueado_hasta TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE public.codigos_invitacion (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  codigo character varying NOT NULL UNIQUE,
+  usado boolean DEFAULT false,
+  usado_por character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT codigos_invitacion_pkey PRIMARY KEY (id)
 );
 
 -- ==============================================================================
--- DISPARADORES (TRIGGERS) PARA LA INTEGRIDAD DE RATING
+-- TABLAS DE PRIMER NIVEL DE DEPENDENCIA
 -- ==============================================================================
 
--- Función para calcular y actualizar el promedio de estrellas del barbero
-CREATE OR REPLACE FUNCTION fn_update_barber_rating()
-RETURNS TRIGGER AS $$
-DECLARE
-    v_barbero_id UUID;
-    v_avg_rating DECIMAL(3,2);
-BEGIN
-    -- Identificar el barbero asociado a la cita calificada
-    IF (TG_OP = 'DELETE') THEN
-        SELECT barbero_id INTO v_barbero_id FROM citas WHERE id = OLD.cita_id;
-    ELSE
-        SELECT barbero_id INTO v_barbero_id FROM citas WHERE id = NEW.cita_id;
-    END IF;
-
-    -- Calcular el promedio acumulado e introducir el cambio
-    IF v_barbero_id IS NOT NULL THEN
-        SELECT COALESCE(ROUND(AVG(estrellas), 2), 0.00) INTO v_avg_rating
-        FROM calificaciones c
-        JOIN citas ci ON c.cita_id = ci.id
-        WHERE ci.barbero_id = v_barbero_id;
-
-        UPDATE barberos
-        SET rating_promedio = v_avg_rating
-        WHERE id = v_barbero_id;
-    END IF;
-
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Disparador activado en eventos de la tabla calificaciones
-CREATE TRIGGER trg_update_barber_rating
-AFTER INSERT OR UPDATE OR DELETE ON calificaciones
-FOR EACH ROW
-EXECUTE FUNCTION fn_update_barber_rating();
-
--- ==========================================
--- ÍNDICES DE RENDIMIENTO (Performance Tuning)
--- ==========================================
--- Índices en llaves foráneas para acelerar los JOINs
-CREATE INDEX idx_barberos_usuario_id ON barberos(usuario_id);
-CREATE INDEX idx_servicios_barbero_id ON servicios(barbero_id);
-CREATE INDEX idx_citas_cliente_id ON citas(cliente_id);
-CREATE INDEX idx_citas_barbero_id ON citas(barbero_id);
-CREATE INDEX idx_citas_servicio_id ON citas(servicio_id);
-CREATE INDEX idx_pagos_cita_id ON pagos(cita_id);
-CREATE INDEX idx_calificaciones_cita_id ON calificaciones(cita_id);
-
--- Índice temporal para las agendas de los barberos
-CREATE INDEX idx_citas_fecha_hora ON citas(fecha_hora);
-
--- Índice para búsquedas rápidas de OTP
-CREATE INDEX idx_verificaciones_otp_telefono ON verificaciones_otp(telefono);
-
--- ==========================================
--- SEGURIDAD (Row Level Security - RLS)
--- ==========================================
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE barberos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE servicios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE citas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pagos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE calificaciones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE verificaciones_otp ENABLE ROW LEVEL SECURITY;
-
--- Políticas para la tabla: usuarios
-CREATE POLICY "usuarios_public_select" ON usuarios FOR SELECT USING (true);
-CREATE POLICY "usuarios_public_insert" ON usuarios FOR INSERT WITH CHECK (true);
-CREATE POLICY "usuarios_owner_update" ON usuarios FOR UPDATE USING (auth.uid() = id);
-
--- Políticas para la tabla: barberos
-CREATE POLICY "barberos_public_select" ON barberos FOR SELECT USING (activo = true);
-CREATE POLICY "barberos_owner_update" ON barberos FOR UPDATE USING (usuario_id = auth.uid());
-
--- Políticas para la tabla: servicios
-CREATE POLICY "servicios_public_select" ON servicios FOR SELECT USING (activo = true);
-CREATE POLICY "servicios_owner_all" ON servicios FOR ALL USING (
-    barbero_id IN (SELECT id FROM barberos WHERE usuario_id = auth.uid())
+CREATE TABLE public.barberos (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  usuario_id uuid UNIQUE,
+  descripcion text,
+  rating_promedio numeric DEFAULT 0.00 CHECK (rating_promedio >= 0.00 AND rating_promedio <= 5.00),
+  direccion character varying NOT NULL,
+  lat double precision NOT NULL,
+  lng double precision NOT NULL,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT barberos_pkey PRIMARY KEY (id),
+  CONSTRAINT barberos_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id)
 );
 
--- Políticas para la tabla: citas
-CREATE POLICY "citas_public_insert" ON citas FOR INSERT WITH CHECK (true);
-CREATE POLICY "citas_relation_select" ON citas FOR SELECT USING (
-    cliente_id = auth.uid() OR 
-    barbero_id IN (SELECT id FROM barberos WHERE usuario_id = auth.uid())
-);
-CREATE POLICY "citas_relation_update" ON citas FOR UPDATE USING (
-    cliente_id = auth.uid() OR 
-    barbero_id IN (SELECT id FROM barberos WHERE usuario_id = auth.uid())
-);
+-- ==============================================================================
+-- TABLAS DE SEGUNDO NIVEL DE DEPENDENCIA (Dependen de Barberos)
+-- ==============================================================================
 
--- Políticas para la tabla: pagos
-CREATE POLICY "pagos_public_insert" ON pagos FOR INSERT WITH CHECK (true);
-CREATE POLICY "pagos_relation_select" ON pagos FOR SELECT USING (
-    cita_id IN (
-        SELECT id FROM citas WHERE 
-        cliente_id = auth.uid() OR 
-        barbero_id IN (SELECT id FROM barberos WHERE usuario_id = auth.uid())
-    )
+CREATE TABLE public.servicios (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  barbero_id uuid,
+  nombre character varying NOT NULL,
+  duracion_min integer NOT NULL CHECK (duracion_min >= 15 AND (duracion_min % 15) = 0),
+  precio numeric NOT NULL CHECK (precio >= 10.00),
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT servicios_pkey PRIMARY KEY (id),
+  CONSTRAINT servicios_barbero_id_fkey FOREIGN KEY (barbero_id) REFERENCES public.barberos(id)
 );
 
--- Políticas para la tabla: calificaciones
-CREATE POLICY "calificaciones_public_select" ON calificaciones FOR SELECT USING (true);
-CREATE POLICY "calificaciones_owner_insert" ON calificaciones FOR INSERT WITH CHECK (
-    cliente_id = auth.uid()
+CREATE TABLE public.horario_base (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  barbero_id uuid,
+  dia_semana smallint NOT NULL CHECK (dia_semana >= 0 AND dia_semana <= 6),
+  hora_inicio time without time zone NOT NULL,
+  hora_fin time without time zone NOT NULL,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT horario_base_pkey PRIMARY KEY (id),
+  CONSTRAINT horario_base_barbero_id_fkey FOREIGN KEY (barbero_id) REFERENCES public.barberos(id)
 );
 
--- Políticas para la tabla: verificaciones_otp
-CREATE POLICY "verificaciones_otp_public_insert" ON verificaciones_otp FOR INSERT WITH CHECK (true);
-CREATE POLICY "verificaciones_otp_public_select" ON verificaciones_otp FOR SELECT USING (true);
-CREATE POLICY "verificaciones_otp_public_update" ON verificaciones_otp FOR UPDATE USING (true);
+CREATE TABLE public.horarios_bloqueados (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  barbero_id uuid,
+  fecha date NOT NULL,
+  hora_inicio time without time zone,
+  hora_fin time without time zone,
+  motivo character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT horarios_bloqueados_pkey PRIMARY KEY (id),
+  CONSTRAINT horarios_bloqueados_barbero_id_fkey FOREIGN KEY (barbero_id) REFERENCES public.barberos(id)
+);
 
--- ==========================================
--- TIEMPO REAL (Supabase Realtime)
--- ==========================================
-ALTER PUBLICATION supabase_realtime ADD TABLE citas;
+-- ==============================================================================
+-- TABLAS TRANSACCIONALES CORE
+-- ==============================================================================
 
--- ==========================================
--- SEMILLAS / DATOS DEMO (Seed Data)
--- ==========================================
+CREATE TABLE public.citas (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  cliente_id uuid,
+  barbero_id uuid,
+  servicio_id uuid,
+  fecha_hora timestamp with time zone NOT NULL,
+  estado character varying DEFAULT 'pendiente'::character varying CHECK (estado::text = ANY (ARRAY['pendiente'::character varying, 'confirmada'::character varying, 'en_curso'::character varying, 'completada'::character varying, 'cancelada'::character varying]::text[])),
+  notas text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT citas_pkey PRIMARY KEY (id),
+  CONSTRAINT citas_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.usuarios(id),
+  CONSTRAINT citas_barbero_id_fkey FOREIGN KEY (barbero_id) REFERENCES public.barberos(id),
+  CONSTRAINT citas_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id)
+);
 
--- 1. Insertar Usuarios
--- Contiene barberos y clientes de prueba
-INSERT INTO usuarios (id, telefono, nombre, tipo) VALUES 
-('b1111111-1111-1111-1111-111111111111', '+525511111111', 'Don Cleto', 'barbero'),
-('b2222222-2222-2222-2222-222222222222', '+525522222222', 'Sebastián Ramos', 'barbero'),
-('b3333333-3333-3333-3333-333333333333', '+525533333333', 'Marcos Luna', 'barbero'),
-('c1111111-1111-1111-1111-111111111111', '+525544444444', 'Carlos P.', 'cliente'),
-('c2222222-2222-2222-2222-222222222222', '+525555555555', 'Jorge García', 'cliente'),
-('c3333333-3333-3333-3333-333333333333', '+525566666666', 'Armando Robles', 'cliente');
+-- ==============================================================================
+-- TABLAS FINALES (Dependen de Citas)
+-- ==============================================================================
 
--- 2. Insertar Barberos
-INSERT INTO barberos (id, usuario_id, descripcion, direccion, lat, lng) VALUES 
-('a1111111-1111-1111-1111-111111111111', 'b1111111-1111-1111-1111-111111111111', 'Afeitado tradicional a navaja y arreglo de barba premium.', 'Av. Hidalgo 120, Col. Centro, Guadalajara, Jal.', 20.6766, -103.3475),
-('a2222222-2222-2222-2222-222222222222', 'b2222222-2222-2222-2222-222222222222', 'Estilos modernos, desvanecidos (fades) y colorimetría.', 'Av. Juárez 450, Col. Americana, Guadalajara, Jal.', 20.6741, -103.3568),
-('a3333333-3333-3333-3333-333333333333', 'b3333333-3333-3333-3333-333333333333', 'Cortes clásicos de tijera y perfilado infantil.', 'Av. Chapultepec 80, Col. Lafayete, Guadalajara, Jal.', 20.6725, -103.3688);
+CREATE TABLE public.pagos (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  cita_id uuid UNIQUE,
+  monto numeric NOT NULL CHECK (monto >= 0.00),
+  metodo character varying NOT NULL CHECK (metodo::text = ANY (ARRAY['tarjeta'::character varying, 'spei'::character varying, 'efectivo'::character varying]::text[])),
+  referencia_ext character varying UNIQUE,
+  estado character varying NOT NULL CHECK (estado::text = ANY (ARRAY['pendiente'::character varying, 'pagado'::character varying, 'reembolsado'::character varying, 'fallido'::character varying]::text[])),
+  pagado_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT pagos_pkey PRIMARY KEY (id),
+  CONSTRAINT pagos_cita_id_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id)
+);
 
--- 3. Insertar Servicios
--- Distribuidos en los respectivos catálogos de los barberos
-INSERT INTO servicios (id, barbero_id, nombre, duracion_min, precio) VALUES 
-('e1111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111111', 'Arreglo de Barba', 30, 150.00),
-('e2222222-2222-2222-2222-222222222222', 'a2222222-2222-2222-2222-222222222222', 'Corte Clásico', 45, 250.00),
-('e3333333-3333-3333-3333-333333333333', 'a3333333-3333-3333-3333-333333333333', 'Paquete Premium', 75, 350.00);
+CREATE TABLE public.calificaciones (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  cita_id uuid UNIQUE,
+  cliente_id uuid,
+  estrellas integer NOT NULL CHECK (estrellas >= 1 AND estrellas <= 5),
+  comentario character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT calificaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT calificaciones_cita_id_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id),
+  CONSTRAINT calificaciones_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.usuarios(id)
+);
 
--- 4. Insertar Citas (Ejemplos históricos y del día actual)
-INSERT INTO citas (id, cliente_id, barbero_id, servicio_id, fecha_hora, estado, notas) VALUES 
-('d1111111-1111-1111-1111-111111111111', 'c1111111-1111-1111-1111-111111111111', 'a2222222-2222-2222-2222-222222222222', 'e2222222-2222-2222-2222-222222222222', CURRENT_DATE + TIME '10:00:00', 'confirmada', 'Corte clásico con fade alto.'),
-('d2222222-2222-2222-2222-222222222222', 'c2222222-2222-2222-2222-222222222222', 'a1111111-1111-1111-1111-111111111111', 'e1111111-1111-1111-1111-111111111111', CURRENT_DATE + TIME '11:00:00', 'confirmada', 'Arreglo de barba con toalla caliente.'),
-('d3333333-3333-3333-3333-333333333333', 'c3333333-3333-3333-3333-333333333333', 'a3333333-3333-3333-3333-333333333333', 'e3333333-3333-3333-3333-333333333333', CURRENT_DATE + TIME '12:30:00', 'completada', 'Sin notas.');
+-- ==============================================================================
+-- DATOS SEMILLA (SEED DATA)
+-- ==============================================================================
 
--- 5. Insertar Pagos
-INSERT INTO pagos (cita_id, monto, metodo, referencia_ext, estado, pagado_at) VALUES 
-('d1111111-1111-1111-1111-111111111111', 250.00, 'tarjeta', 'conekta_charge_99812', 'pagado', NOW()),
-('d2222222-2222-2222-2222-222222222222', 150.00, 'spei', 'conekta_spei_88716', 'pagado', NOW()),
-('d3333333-3333-3333-3333-333333333333', 350.00, 'efectivo', NULL, 'pagado', NOW());
+-- 1. Crear un usuario (Tipo Barbero)
+INSERT INTO public.usuarios (id, telefono, nombre, foto_url, tipo) 
+VALUES ('c4b1897e-1234-4000-8000-111111111111', '+525555555555', 'Ricardo Barbero', 'https://ui-avatars.com/api/?name=Ricardo+B', 'barbero');
 
--- 6. Insertar Calificaciones (Esto activará el trigger y actualizará el rating_promedio de los barberos)
-INSERT INTO calificaciones (cita_id, cliente_id, estrellas, comentario) VALUES 
-('d3333333-3333-3333-3333-333333333333', 'c3333333-3333-3333-3333-333333333333', 5, 'Excelente servicio de corte clásico, muy profesional Marcos Luna.');
+-- 2. Enlazar ese usuario en la tabla de barberos
+INSERT INTO public.barberos (id, usuario_id, descripcion, rating_promedio, direccion, lat, lng, activo)
+VALUES ('b4b1897e-1234-4000-8000-222222222222', 'c4b1897e-1234-4000-8000-111111111111', 'Barbero experto con 10 años de experiencia', 5.00, 'Centro, CDMX', 19.4326, -99.1332, true);
+
+-- 3. Agregar un par de servicios para que puedas probar las citas
+INSERT INTO public.servicios (barbero_id, nombre, duracion_min, precio, activo)
+VALUES 
+('b4b1897e-1234-4000-8000-222222222222', 'Corte Clásico', 30, 200.00, true),
+('b4b1897e-1234-4000-8000-222222222222', 'Arreglo de Barba', 15, 150.00, true);
+
+-- 4. Darle un horario de trabajo (Lunes a Viernes de 9am a 6pm)
+INSERT INTO public.horario_base (barbero_id, dia_semana, hora_inicio, hora_fin, activo)
+VALUES
+('b4b1897e-1234-4000-8000-222222222222', 1, '09:00:00', '18:00:00', true),
+('b4b1897e-1234-4000-8000-222222222222', 2, '09:00:00', '18:00:00', true),
+('b4b1897e-1234-4000-8000-222222222222', 3, '09:00:00', '18:00:00', true),
+('b4b1897e-1234-4000-8000-222222222222', 4, '09:00:00', '18:00:00', true),
+('b4b1897e-1234-4000-8000-222222222222', 5, '09:00:00', '18:00:00', true);
